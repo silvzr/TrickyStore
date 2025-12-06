@@ -72,10 +72,6 @@ chmod 755 "$MODPATH/daemon"
 
 
 case $ARCH in
-  "x64")
-    ui_print "- Extracting x64 libraries"
-    extract "$ZIPFILE" "lib/x86_64/lib$SONAME.so" "$MODPATH" true
-    extract "$ZIPFILE" "lib/x86_64/libinject.so" "$MODPATH" true ;;
   "arm64")
     ui_print "- Extracting arm64 libraries"
     extract "$ZIPFILE" "lib/arm64-v8a/lib$SONAME.so" "$MODPATH" true

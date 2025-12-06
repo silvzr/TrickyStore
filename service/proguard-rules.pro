@@ -19,49 +19,36 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
--keepclasseswithmembers class io.github.a13e300.tricky_store.MainKt {
+
+# Main entry point (Java)
+-keepclasseswithmembers class io.github.a13e300.tricky_store.Main {
     public static void main(java.lang.String[]);
 }
 
+# Remove debug logging in release builds
 -assumenosideeffects class io.github.a13e300.tricky_store.Logger {
-    public static void d(java.lang.String);
+    public static void d(...);
+    public static void dd(...);
 }
 
-# keep these or bouncycastle will not work
--keep class org.bouncycastle.jcajce.provider.** { *; }
--keep class org.bouncycastle.jce.provider.** { *; }
+# BouncyCastle - only keep what we actually use
+-keep class org.bouncycastle.jcajce.provider.asymmetric.ec.** { *; }
+-keep class org.bouncycastle.jcajce.provider.asymmetric.rsa.** { *; }
+-keep class org.bouncycastle.jcajce.provider.asymmetric.x509.** { *; }
+-keep class org.bouncycastle.jce.provider.BouncyCastleProvider { *; }
+-keep class org.bouncycastle.asn1.** { *; }
+-keep class org.bouncycastle.cert.** { *; }
+-keep class org.bouncycastle.operator.** { *; }
 -dontwarn javax.naming.**
 
+# Android/System classes
 -keep class android.** { *; }
 -keep class com.android.** { *; }
 -keep class top.qwq2333.ohmykeymint.** { *; }
 
+# Binder transaction codes
 -keepclassmembers class * {
     static final int TRANSACTION_*;
-}
-
-# Keep `Companion` object fields of serializable classes.
-# This avoids serializer lookup through `getDeclaredClasses` as done for named companion objects.
--if @kotlinx.serialization.Serializable class **
--keepclassmembers class <1> {
-   static <1>$Companion Companion;
-}
-
-# Keep `serializer()` on companion objects (both default and named) of serializable classes.
--if @kotlinx.serialization.Serializable class ** {
-   static **$* *;
-}
--keepclassmembers class <2>$<3> {
-   kotlinx.serialization.KSerializer serializer(...);
-}
-
-# Keep `INSTANCE.serializer()` of serializable objects.
--if @kotlinx.serialization.Serializable class ** {
-   public static ** INSTANCE;
-}
--keepclassmembers class <1> {
-   public static <1> INSTANCE;
-   kotlinx.serialization.KSerializer serializer(...);
 }
 
 -repackageclasses

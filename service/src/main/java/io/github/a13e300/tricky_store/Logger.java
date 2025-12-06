@@ -32,4 +32,12 @@ public class Logger {
         Log.i(TAG, msg);
     }
 
+    public static void w(String msg) {
+        Log.w(TAG, msg);
+    }
+
+    public static void w(String msg, Throwable t) {
+        Log.w(TAG, msg, t);
+    }
+
 }

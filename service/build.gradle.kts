@@ -4,7 +4,6 @@ import java.security.MessageDigest
 
 plugins {
     alias(libs.plugins.jetbrains.kotlin.android)
-    alias(libs.plugins.kotlinx.serialization)
     alias(libs.plugins.agp.app)
 }
 
@@ -51,8 +50,9 @@ android {
         }
     }
 
-    kotlinOptions {
-        jvmTarget = "17"
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
     }
 
     buildTypes {
@@ -83,11 +83,7 @@ dependencies {
     compileOnly(project(":stub"))
     compileOnly(libs.annotation)
     compileOnly(libs.dev.rikka.hidden.stub)
-    implementation(kotlin("reflect"))
-    implementation(libs.ktoml.core)
-    implementation(libs.ktoml.file)
     implementation(libs.bcpkix.jdk18on)
-    implementation(libs.kotlinx.coroutines.android)
 }
 
 afterEvaluate {

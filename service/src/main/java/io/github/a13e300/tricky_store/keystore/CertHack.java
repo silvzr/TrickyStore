@@ -72,10 +72,10 @@ import java.util.Set;
 
 import javax.security.auth.x500.X500Principal;
 
-import io.github.a13e300.tricky_store.Cache;
+import io.github.a13e300.tricky_store.KeyCache;
 import io.github.a13e300.tricky_store.Config;
 import io.github.a13e300.tricky_store.Logger;
-import io.github.a13e300.tricky_store.UtilKt;
+import io.github.a13e300.tricky_store.TrickyStoreUtils;
 import top.qwq2333.ohmykeymint.IOhMyKsService;
 
 public final class CertHack {
@@ -108,13 +108,13 @@ public final class CertHack {
     }
 
     private static PEMKeyPair parseKeyPair(String key) throws Throwable {
-        try (PEMParser parser = new PEMParser(new StringReader(UtilKt.trimLine(key)))) {
+        try (PEMParser parser = new PEMParser(new StringReader(TrickyStoreUtils.trimLine(key)))) {
             return (PEMKeyPair) parser.readObject();
         }
     }
 
     private static Certificate parseCert(String cert) throws Throwable {
-        try (PemReader reader = new PemReader(new StringReader(UtilKt.trimLine(cert)))) {
+        try (PemReader reader = new PemReader(new StringReader(TrickyStoreUtils.trimLine(cert)))) {
             return certificateFactory.generateCertificate(new ByteArrayInputStream(reader.readPemObject().getContent()));
         }
     }
@@ -171,22 +171,22 @@ public final class CertHack {
                                 Map<String, String> certData = xmlParser.obtainPath(
                                         "AndroidAttestation.Keybox.Key[" + i + "].CertificateChain.Certificate[" + j + "]");
                                 var cert = new android.hardware.security.keymint.Certificate();
-                                cert.encodedCertificate = Base64.getDecoder().decode(UtilKt.parsePemToBase64(certData.get("text")));
+                                cert.encodedCertificate = Base64.getDecoder().decode(TrickyStoreUtils.parsePemToBase64(certData.get("text")));
                                 list.add(cert);
                             }
 
-                            omk.updateEcKeybox(Base64.getDecoder().decode(UtilKt.parsePemToBase64(privateKey)), list);
+                            omk.updateEcKeybox(Base64.getDecoder().decode(TrickyStoreUtils.parsePemToBase64(privateKey)), list);
                         } else if (keyboxAlgorithm.equalsIgnoreCase("rsa")) {
                             ArrayList<android.hardware.security.keymint.Certificate> list = new ArrayList<>();
                             for (int j = 0; j < numberOfCertificates; j++) {
                                 Map<String, String> certData = xmlParser.obtainPath(
                                         "AndroidAttestation.Keybox.Key[" + i + "].CertificateChain.Certificate[" + j + "]");
                                 var cert = new android.hardware.security.keymint.Certificate();
-                                cert.encodedCertificate = Base64.getDecoder().decode(UtilKt.parsePemToBase64(certData.get("text")));
+                                cert.encodedCertificate = Base64.getDecoder().decode(TrickyStoreUtils.parsePemToBase64(certData.get("text")));
                                 list.add(cert);
                             }
 
-                            omk.updateRsaKeybox(Base64.getDecoder().decode(UtilKt.parsePemToBase64(privateKey)), list);
+                            omk.updateRsaKeybox(Base64.getDecoder().decode(TrickyStoreUtils.parsePemToBase64(privateKey)), list);
                         }
                     } catch (Exception e) {
                         Logger.e("Unable to update keybox to OMK", e);
@@ -244,7 +244,7 @@ public final class CertHack {
             signer = new JcaContentSignerBuilder(leaf.getSigAlgName())
                     .build(k.keyPair.getPrivate());
 
-            byte[] verifiedBootKey = UtilKt.getBootKey();
+            byte[] verifiedBootKey = TrickyStoreUtils.getBootKey();
             byte[] verifiedBootHash = null;
             try {
                 if (!(rootOfTrust instanceof ASN1Sequence r)) {
@@ -257,7 +257,7 @@ public final class CertHack {
             }
 
             if (verifiedBootHash == null) {
-                verifiedBootHash = UtilKt.getBootHash();
+                verifiedBootHash = TrickyStoreUtils.getBootHash();
             }
 
             ASN1Encodable[] rootOfTrustEnc = {
@@ -355,7 +355,7 @@ public final class CertHack {
             signer = new JcaContentSignerBuilder(leaf.getSigAlgName())
                     .build(k.keyPair.getPrivate());
 
-            byte[] verifiedBootKey = UtilKt.getBootKey();
+            byte[] verifiedBootKey = TrickyStoreUtils.getBootKey();
             byte[] verifiedBootHash = null;
             try {
                 if (!(rootOfTrust instanceof ASN1Sequence r)) {
@@ -368,7 +368,7 @@ public final class CertHack {
             }
 
             if (verifiedBootHash == null) {
-                verifiedBootHash = UtilKt.getBootHash();
+                verifiedBootHash = TrickyStoreUtils.getBootHash();
             }
 
             ASN1Encodable[] rootOfTrustEnc = {
@@ -504,11 +504,11 @@ public final class CertHack {
             ).getSubject();
 
             if (attestPurpose) {
-                var info = Cache.INSTANCE.getKeyPairs(uid, attestKeyDescriptor.alias);
+                var info = KeyCache.getInstance().getKeyPairChain(uid, attestKeyDescriptor.alias);
                 if (info != null) {
-                    rootKP = info.getFirst();
+                    rootKP = info.keyPair();
                     issuer = new X509CertificateHolder(
-                            info.getSecond().get(0).getEncoded()
+                            info.chain().get(0).getEncoded()
                     ).getSubject();
                 }
             }
@@ -560,7 +560,7 @@ public final class CertHack {
     }
 
     public interface ImportedKeyCallback {
-        kotlin.Pair<PrivateKey, Certificate> getCachedKeypair();
+        Pair<PrivateKey, Certificate> getCachedKeypair();
     }
 
     public static Pair<KeyPair, List<Certificate>> generateKeyPairWithImportedKey(KeyDescriptor descriptor, KeyGenParameters params, ImportedKeyCallback callback) {
@@ -572,8 +572,8 @@ public final class CertHack {
         try {
             var algo = params.algorithm;
             var pair = callback.getCachedKeypair();
-            var certificate = pair.getSecond();
-            var privatekey = pair.getFirst();
+            var certificate = pair.second;
+            var privatekey = pair.first;
             rootKP = new KeyPair(certificate.getPublicKey(), privatekey);
             issuer = new X509CertificateHolder(
                     certificate.getEncoded()
@@ -663,8 +663,8 @@ public final class CertHack {
 
     private static Extension createExtension(KeyGenParameters params, int uid) {
         try {
-            byte[] key = UtilKt.getBootKey();
-            byte[] hash = UtilKt.getBootHash();
+            byte[] key = TrickyStoreUtils.getBootKey();
+            byte[] hash = TrickyStoreUtils.getBootHash();
 
             ASN1Encodable[] rootOfTrustEncodables = {new DEROctetString(key), ASN1Boolean.TRUE,
                     new ASN1Enumerated(0), new DEROctetString(hash)};
@@ -681,12 +681,12 @@ public final class CertHack {
             var AnoAuthRequired = DERNull.INSTANCE;
 
             // To be loaded
-            var AosVersion = new ASN1Integer(UtilKt.getOsVersion());
-            var AosPatchLevel = new ASN1Integer(UtilKt.getPatchLevel());
+            var AosVersion = new ASN1Integer(TrickyStoreUtils.getOsVersion());
+            var AosPatchLevel = new ASN1Integer(TrickyStoreUtils.getPatchLevel());
 
             var AapplicationID = createApplicationId(uid);
-            var AbootPatchlevel = new ASN1Integer(UtilKt.getPatchLevelLong());
-            var AvendorPatchLevel = new ASN1Integer(UtilKt.getPatchLevelLong());
+            var AbootPatchlevel = new ASN1Integer(TrickyStoreUtils.getPatchLevelLong());
+            var AvendorPatchLevel = new ASN1Integer(TrickyStoreUtils.getPatchLevelLong());
 
             var AcreationDateTime = new ASN1Integer(System.currentTimeMillis());
             var Aorigin = new ASN1Integer(0);
@@ -706,7 +706,7 @@ public final class CertHack {
             var vendorPatchLevel = new DERTaggedObject(true, 718, AvendorPatchLevel);
             var bootPatchLevel = new DERTaggedObject(true, 719, AbootPatchlevel);
 
-            var AmoduleHash = new DEROctetString(UtilKt.getModuleHash());
+            var AmoduleHash = new DEROctetString(TrickyStoreUtils.getModuleHash());
             var moduleHash = new DERTaggedObject(true, 724, AmoduleHash);
 
             var arrayList = new ArrayList<>(Arrays.asList(purpose, algorithm, keySize, digest, ecCurve,
@@ -715,7 +715,7 @@ public final class CertHack {
 
             // Support device properties attestation
             if (params.brand != null) {
-                arrayList.addAll(UtilKt.getTelephonyInfos());
+                arrayList.addAll(TrickyStoreUtils.getTelephonyInfos());
             }
 
             arrayList.sort(Comparator.comparingInt(ASN1TaggedObject::getTagNo));
@@ -750,7 +750,7 @@ public final class CertHack {
     }
 
     private static DEROctetString createApplicationId(int uid) throws Throwable {
-        var pm = Config.INSTANCE.getPm();
+        var pm = Config.getInstance().getPackageManager();
         if (pm == null) {
             throw new IllegalStateException("createApplicationId: pm not found!");
         }
@@ -761,7 +761,7 @@ public final class CertHack {
         var dg = MessageDigest.getInstance("SHA-256");
         for (int i = 0; i < size; i++) {
             var name = packages[i];
-            var info = UtilKt.getPackageInfoCompat(pm, name, PackageManager.GET_SIGNATURES, uid / 100000);
+            var info = TrickyStoreUtils.getPackageInfoCompat(pm, name, PackageManager.GET_SIGNATURES, uid / 100000);
             ASN1Encodable[] arr = new ASN1Encodable[2];
             arr[ATTESTATION_PACKAGE_INFO_PACKAGE_NAME_INDEX] =
                     new DEROctetString(packages[i].getBytes(StandardCharsets.UTF_8));
@@ -887,6 +887,32 @@ public final class CertHack {
                 case 384 -> this.ecCurveName = "secp384r1";
                 case 521 -> this.ecCurveName = "secp521r1";
             }
+        }
+        
+        // Getter methods for compatibility with SecurityLevelInterceptor
+        public int[] getPurposes() {
+            return purpose.stream().mapToInt(Integer::intValue).toArray();
+        }
+        
+        public int[] getDigests() {
+            return digest.stream().mapToInt(Integer::intValue).toArray();
+        }
+        
+        public int getAlgorithm() {
+            return algorithm;
+        }
+        
+        public int getKeySize() {
+            return keySize;
+        }
+        
+        public int getEcCurve() {
+            return ecCurve;
+        }
+        
+        public boolean isNoAuthRequired() {
+            // By default, attestation keys don't require auth
+            return true;
         }
     }
 }
