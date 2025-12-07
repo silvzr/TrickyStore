@@ -271,7 +271,18 @@ public final class CertHack {
             ASN1TaggedObject rootOfTrustTagObj = new DERTaggedObject(704, hackedRootOfTrust);
             vector.add(rootOfTrustTagObj);
 
-            ASN1Sequence hackEnforced = new DERSequence(vector);
+            // Sort by tag number for DER compliance
+            List<ASN1TaggedObject> sortedTags = new ArrayList<>();
+            for (int i = 0; i < vector.size(); i++) {
+                sortedTags.add((ASN1TaggedObject) vector.get(i));
+            }
+            sortedTags.sort(Comparator.comparingInt(ASN1TaggedObject::getTagNo));
+            ASN1EncodableVector sortedVector = new ASN1EncodableVector();
+            for (ASN1TaggedObject tag : sortedTags) {
+                sortedVector.add(tag);
+            }
+
+            ASN1Sequence hackEnforced = new DERSequence(sortedVector);
             encodables[7] = hackEnforced;
             ASN1Sequence hackedSeq = new DERSequence(encodables);
 
@@ -382,7 +393,18 @@ public final class CertHack {
             ASN1TaggedObject rootOfTrustTagObj = new DERTaggedObject(704, hackedRootOfTrust);
             vector.add(rootOfTrustTagObj);
 
-            ASN1Sequence hackEnforced = new DERSequence(vector);
+            // Sort by tag number for DER compliance
+            List<ASN1TaggedObject> sortedTags = new ArrayList<>();
+            for (int i = 0; i < vector.size(); i++) {
+                sortedTags.add((ASN1TaggedObject) vector.get(i));
+            }
+            sortedTags.sort(Comparator.comparingInt(ASN1TaggedObject::getTagNo));
+            ASN1EncodableVector sortedVector = new ASN1EncodableVector();
+            for (ASN1TaggedObject tag : sortedTags) {
+                sortedVector.add(tag);
+            }
+
+            ASN1Sequence hackEnforced = new DERSequence(sortedVector);
             encodables[7] = hackEnforced;
             ASN1Sequence hackedSeq = new DERSequence(encodables);
 
@@ -531,7 +553,13 @@ public final class CertHack {
             }
             certBuilder.addExtension(Extension.keyUsage, true, keyUsage);
             if (params.attestationChallenge != null) {
-                certBuilder.addExtension(createExtension(params, uid));
+                Extension ext = createExtension(params, uid);
+                if (ext != null) {
+                    certBuilder.addExtension(ext);
+                } else {
+                    Logger.e("Failed to create attestation extension");
+                    return null;
+                }
             } else {
                 Logger.d("No attestationChallenge provided, skipping attestation extension");
             }
@@ -666,6 +694,12 @@ public final class CertHack {
             byte[] key = TrickyStoreUtils.getBootKey();
             byte[] hash = TrickyStoreUtils.getBootHash();
 
+            // RootOfTrust ::= SEQUENCE {
+            //     verifiedBootKey            OCTET_STRING,
+            //     deviceLocked               BOOLEAN,
+            //     verifiedBootState          VerifiedBootState (ENUMERATED),
+            //     verifiedBootHash           OCTET_STRING,
+            // }
             ASN1Encodable[] rootOfTrustEncodables = {new DEROctetString(key), ASN1Boolean.TRUE,
                     new ASN1Enumerated(0), new DEROctetString(hash)};
 
@@ -673,56 +707,109 @@ public final class CertHack {
 
             Logger.dd("params.purpose: " + params.purpose);
 
-            var Apurpose = new DERSet(fromIntList(params.purpose));
-            var Aalgorithm = new ASN1Integer(params.algorithm);
-            var AkeySize = new ASN1Integer(params.keySize);
-            var Adigest = new DERSet(fromIntList(params.digest));
-            var AecCurve = new ASN1Integer(params.ecCurve);
-            var AnoAuthRequired = DERNull.INSTANCE;
-
-            // To be loaded
-            var AosVersion = new ASN1Integer(TrickyStoreUtils.getOsVersion());
-            var AosPatchLevel = new ASN1Integer(TrickyStoreUtils.getPatchLevel());
-
-            var AapplicationID = createApplicationId(uid);
-            var AbootPatchlevel = new ASN1Integer(TrickyStoreUtils.getPatchLevelLong());
-            var AvendorPatchLevel = new ASN1Integer(TrickyStoreUtils.getPatchLevelLong());
-
-            var AcreationDateTime = new ASN1Integer(System.currentTimeMillis());
-            var Aorigin = new ASN1Integer(0);
-
-            var purpose = new DERTaggedObject(true, 1, Apurpose);
-            var algorithm = new DERTaggedObject(true, 2, Aalgorithm);
-            var keySize = new DERTaggedObject(true, 3, AkeySize);
-            var digest = new DERTaggedObject(true, 5, Adigest);
-            var ecCurve = new DERTaggedObject(true, 10, AecCurve);
-            var noAuthRequired = new DERTaggedObject(true, 503, AnoAuthRequired);
-            var creationDateTime = new DERTaggedObject(true, 701, AcreationDateTime);
-            var origin = new DERTaggedObject(true, 702, Aorigin);
-            var rootOfTrust = new DERTaggedObject(true, 704, rootOfTrustSeq);
-            var osVersion = new DERTaggedObject(true, 705, AosVersion);
-            var osPatchLevel = new DERTaggedObject(true, 706, AosPatchLevel);
-            var applicationID = new DERTaggedObject(true, 709, AapplicationID);
-            var vendorPatchLevel = new DERTaggedObject(true, 718, AvendorPatchLevel);
-            var bootPatchLevel = new DERTaggedObject(true, 719, AbootPatchlevel);
-
-            var AmoduleHash = new DEROctetString(TrickyStoreUtils.getModuleHash());
-            var moduleHash = new DERTaggedObject(true, 724, AmoduleHash);
-
-            var arrayList = new ArrayList<>(Arrays.asList(purpose, algorithm, keySize, digest, ecCurve,
-                    noAuthRequired, origin, rootOfTrust, osVersion, osPatchLevel, vendorPatchLevel,
-                    bootPatchLevel, moduleHash));
-
-            // Support device properties attestation
-            if (params.brand != null) {
-                arrayList.addAll(TrickyStoreUtils.getTelephonyInfos());
+            // Hardware-enforced tags list
+            var teeEnforcedList = new ArrayList<ASN1TaggedObject>();
+            
+            // Purpose [1] - only add if not empty
+            if (params.purpose != null && !params.purpose.isEmpty()) {
+                teeEnforcedList.add(new DERTaggedObject(true, 1, new DERSet(fromIntList(params.purpose))));
+            }
+            
+            // Algorithm [2]
+            teeEnforcedList.add(new DERTaggedObject(true, 2, new ASN1Integer(params.algorithm)));
+            
+            // Key size [3]
+            teeEnforcedList.add(new DERTaggedObject(true, 3, new ASN1Integer(params.keySize)));
+            
+            // Digest [5] - only add if not empty
+            if (params.digest != null && !params.digest.isEmpty()) {
+                teeEnforcedList.add(new DERTaggedObject(true, 5, new DERSet(fromIntList(params.digest))));
+            }
+            
+            // EC Curve [10] - only for EC keys
+            if (params.algorithm == android.hardware.security.keymint.Algorithm.EC) {
+                teeEnforcedList.add(new DERTaggedObject(true, 10, new ASN1Integer(params.ecCurve)));
+            }
+            
+            // RSA public exponent [200] - only for RSA keys
+            if (params.algorithm == android.hardware.security.keymint.Algorithm.RSA && params.rsaPublicExponent != null) {
+                teeEnforcedList.add(new DERTaggedObject(true, 200, new ASN1Integer(params.rsaPublicExponent)));
+            }
+            
+            // Rollback resistance [303] - optional
+            if (params.rollbackResistance) {
+                teeEnforcedList.add(new DERTaggedObject(true, 303, DERNull.INSTANCE));
+            }
+            
+            // Early boot only [305] - optional
+            if (params.earlyBootOnly) {
+                teeEnforcedList.add(new DERTaggedObject(true, 305, DERNull.INSTANCE));
+            }
+            
+            // No auth required [503] - default true
+            if (params.noAuthRequired) {
+                teeEnforcedList.add(new DERTaggedObject(true, 503, DERNull.INSTANCE));
+            }
+            
+            // Origin [702]
+            teeEnforcedList.add(new DERTaggedObject(true, 702, new ASN1Integer(0)));
+            
+            // Root of Trust [704]
+            teeEnforcedList.add(new DERTaggedObject(true, 704, rootOfTrustSeq));
+            
+            // OS Version [705]
+            teeEnforcedList.add(new DERTaggedObject(true, 705, new ASN1Integer(TrickyStoreUtils.getOsVersion())));
+            
+            // OS Patch Level [706]
+            teeEnforcedList.add(new DERTaggedObject(true, 706, new ASN1Integer(TrickyStoreUtils.getPatchLevel())));
+            
+            // Vendor Patch Level [718]
+            teeEnforcedList.add(new DERTaggedObject(true, 718, new ASN1Integer(TrickyStoreUtils.getPatchLevelLong())));
+            
+            // Boot Patch Level [719]
+            teeEnforcedList.add(new DERTaggedObject(true, 719, new ASN1Integer(TrickyStoreUtils.getPatchLevelLong())));
+            
+            // Device unique attestation [720] - optional
+            if (params.deviceUniqueAttestation) {
+                teeEnforcedList.add(new DERTaggedObject(true, 720, DERNull.INSTANCE));
+            }
+            
+            // Module Hash [724] - KeyMint 4.0+
+            byte[] moduleHash = TrickyStoreUtils.getModuleHash();
+            if (moduleHash != null) {
+                teeEnforcedList.add(new DERTaggedObject(true, 724, new DEROctetString(moduleHash)));
             }
 
-            arrayList.sort(Comparator.comparingInt(ASN1TaggedObject::getTagNo));
+            // Support device properties attestation (ID attestation tags)
+            if (params.brand != null) {
+                teeEnforcedList.addAll(TrickyStoreUtils.getTelephonyInfos());
+            }
 
-            ASN1Encodable[] softwareEnforced = {applicationID, creationDateTime};
+            // Sort TEE enforced by tag number (DER requirement)
+            teeEnforcedList.sort(Comparator.comparingInt(ASN1TaggedObject::getTagNo));
 
-            ASN1OctetString keyDescriptionOctetStr = getAsn1OctetString(arrayList.toArray(new ASN1Encodable[]{}), softwareEnforced, params);
+            // Software-enforced tags list
+            var swEnforcedList = new ArrayList<ASN1TaggedObject>();
+            
+            // Creation DateTime [701]
+            swEnforcedList.add(new DERTaggedObject(true, 701, new ASN1Integer(System.currentTimeMillis())));
+            
+            // Attestation Application ID [709]
+            ASN1OctetString applicationId;
+            if (params.attestationApplicationId != null) {
+                applicationId = new DEROctetString(params.attestationApplicationId);
+            } else {
+                applicationId = createApplicationId(uid);
+            }
+            swEnforcedList.add(new DERTaggedObject(true, 709, applicationId));
+            
+            // Sort software enforced by tag number (DER requirement)
+            swEnforcedList.sort(Comparator.comparingInt(ASN1TaggedObject::getTagNo));
+
+            ASN1OctetString keyDescriptionOctetStr = getAsn1OctetString(
+                    teeEnforcedList.toArray(new ASN1Encodable[0]), 
+                    swEnforcedList.toArray(new ASN1Encodable[0]), 
+                    params);
 
             return new Extension(new ASN1ObjectIdentifier("1.3.6.1.4.1.11129.2.1.17"), false, keyDescriptionOctetStr);
         } catch (Throwable t) {
@@ -826,8 +913,16 @@ public final class CertHack {
         public byte[] product;
         public byte[] manufacturer;
         public byte[] model;
+        public byte[] serial;
         public byte[] imei1, imei2;
         public byte[] meid;
+        public byte[] attestationApplicationId;
+        
+        // Additional security tags
+        public boolean noAuthRequired = true;
+        public boolean rollbackResistance = false;
+        public boolean earlyBootOnly = false;
+        public boolean deviceUniqueAttestation = false;
 
         public KeyGenParameters() {
         }
@@ -860,9 +955,15 @@ public final class CertHack {
                     case Tag.ATTESTATION_ID_PRODUCT -> product = p.getBlob();
                     case Tag.ATTESTATION_ID_MANUFACTURER -> manufacturer = p.getBlob();
                     case Tag.ATTESTATION_ID_MODEL -> model = p.getBlob();
+                    case Tag.ATTESTATION_ID_SERIAL -> serial = p.getBlob();
                     case Tag.ATTESTATION_ID_IMEI -> imei1 = p.getBlob();
                     case Tag.ATTESTATION_ID_SECOND_IMEI -> imei2 = p.getBlob();
                     case Tag.ATTESTATION_ID_MEID -> meid = p.getBlob();
+                    case Tag.ATTESTATION_APPLICATION_ID -> attestationApplicationId = p.getBlob();
+                    case Tag.NO_AUTH_REQUIRED -> noAuthRequired = true;
+                    case Tag.ROLLBACK_RESISTANCE -> rollbackResistance = true;
+                    case Tag.EARLY_BOOT_ONLY -> earlyBootOnly = true;
+                    case Tag.DEVICE_UNIQUE_ATTESTATION -> deviceUniqueAttestation = true;
                 }
             }
         }
@@ -911,8 +1012,19 @@ public final class CertHack {
         }
         
         public boolean isNoAuthRequired() {
-            // By default, attestation keys don't require auth
-            return true;
+            return noAuthRequired;
+        }
+        
+        public boolean isRollbackResistance() {
+            return rollbackResistance;
+        }
+        
+        public boolean isEarlyBootOnly() {
+            return earlyBootOnly;
+        }
+        
+        public boolean isDeviceUniqueAttestation() {
+            return deviceUniqueAttestation;
         }
     }
 }

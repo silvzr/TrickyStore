@@ -85,6 +85,9 @@ public final class KeyGenParameters {
     
     // Security settings
     private boolean noAuthRequired = true;
+    private boolean rollbackResistance = false;
+    private boolean earlyBootOnly = false;
+    private boolean deviceUniqueAttestation = false;
     private int origin = 0; // Generated
     
     /**
@@ -171,6 +174,18 @@ public final class KeyGenParameters {
                     
                 case Tag.NO_AUTH_REQUIRED:
                     noAuthRequired = true;
+                    break;
+                    
+                case Tag.ROLLBACK_RESISTANCE:
+                    rollbackResistance = true;
+                    break;
+                    
+                case Tag.EARLY_BOOT_ONLY:
+                    earlyBootOnly = true;
+                    break;
+                    
+                case Tag.DEVICE_UNIQUE_ATTESTATION:
+                    deviceUniqueAttestation = true;
                     break;
                     
                 case Tag.ATTESTATION_CHALLENGE:
@@ -317,6 +332,9 @@ public final class KeyGenParameters {
     public byte[] getAttestationIdSecondImei() { return attestationIdSecondImei; }
     public byte[] getAttestationIdMeid() { return attestationIdMeid; }
     public boolean isNoAuthRequired() { return noAuthRequired; }
+    public boolean isRollbackResistance() { return rollbackResistance; }
+    public boolean isEarlyBootOnly() { return earlyBootOnly; }
+    public boolean isDeviceUniqueAttestation() { return deviceUniqueAttestation; }
     public int getOrigin() { return origin; }
     
     // Setters for legacy support

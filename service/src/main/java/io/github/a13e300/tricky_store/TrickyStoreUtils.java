@@ -252,31 +252,26 @@ public final class TrickyStoreUtils {
             telephonyInfosCache = new ArrayList<>();
             DeviceConfig config = Config.getInstance().getDevConfig();
             
-            telephonyInfosCache.add(toTaggedObject(config.getImei(), 714));
-            telephonyInfosCache.add(toTaggedObject(config.getMeid(), 715));
-            telephonyInfosCache.add(toTaggedObject(config.getImei2(), 723));
-            telephonyInfosCache.add(toTaggedObject(config.getSerial(), 713));
-            telephonyInfosCache.add(toTaggedObject(config.getBrand(), 710));
-            telephonyInfosCache.add(toTaggedObject(config.getDevice(), 711));
-            telephonyInfosCache.add(toTaggedObject(config.getProduct(), 712));
-            telephonyInfosCache.add(toTaggedObject(config.getManufacturer(), 716));
-            telephonyInfosCache.add(toTaggedObject(config.getModel(), 717));
+            addIfNotNull(telephonyInfosCache, config.getBrand(), 710);
+            addIfNotNull(telephonyInfosCache, config.getDevice(), 711);
+            addIfNotNull(telephonyInfosCache, config.getProduct(), 712);
+            addIfNotNull(telephonyInfosCache, config.getSerial(), 713);
+            addIfNotNull(telephonyInfosCache, config.getImei(), 714);
+            addIfNotNull(telephonyInfosCache, config.getMeid(), 715);
+            addIfNotNull(telephonyInfosCache, config.getManufacturer(), 716);
+            addIfNotNull(telephonyInfosCache, config.getModel(), 717);
+            addIfNotNull(telephonyInfosCache, config.getImei2(), 723);
         }
         return telephonyInfosCache;
     }
     
     /**
-     * Converts a string to DER octet string.
+     * Adds a tagged object to list if value is not null or empty.
      */
-    public static DEROctetString toDER(String value) {
-        return new DEROctetString(value.getBytes());
-    }
-    
-    /**
-     * Creates a tagged object from a DER octet string.
-     */
-    public static DERTaggedObject toTaggedObject(String value, int tag) {
-        return new DERTaggedObject(true, tag, toDER(value));
+    private static void addIfNotNull(List<DERTaggedObject> list, String value, int tag) {
+        if (value != null && !value.isEmpty()) {
+            list.add(new DERTaggedObject(true, tag, new DEROctetString(value.getBytes())));
+        }
     }
     
     /**

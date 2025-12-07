@@ -46,6 +46,7 @@ import java.security.cert.Certificate;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 
 import io.github.a13e300.tricky_store.Logger;
@@ -405,8 +406,19 @@ public final class AttestationCertificateGenerator {
             }
         }
         
+        // Sort by tag number for DER compliance
+        List<ASN1TaggedObject> sortedTags = new ArrayList<>();
+        for (int i = 0; i < newHwEnforced.size(); i++) {
+            sortedTags.add((ASN1TaggedObject) newHwEnforced.get(i));
+        }
+        sortedTags.sort(Comparator.comparingInt(ASN1TaggedObject::getTagNo));
+        ASN1EncodableVector sortedHwEnforced = new ASN1EncodableVector();
+        for (ASN1TaggedObject tag : sortedTags) {
+            sortedHwEnforced.add(tag);
+        }
+        
         // Rebuild sequence
-        elements[7] = new DERSequence(newHwEnforced);
+        elements[7] = new DERSequence(sortedHwEnforced);
         ASN1Sequence newSequence = new DERSequence(elements);
         
         return new Extension(ATTESTATION_OID, false, 

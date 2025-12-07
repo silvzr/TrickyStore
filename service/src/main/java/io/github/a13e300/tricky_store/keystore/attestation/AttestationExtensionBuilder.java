@@ -122,98 +122,131 @@ public final class AttestationExtensionBuilder {
     
     /**
      * Builds the software-enforced authorization list.
+     * 
+     * Software-enforced tags are enforced by Android OS, not by hardware.
      */
     private ASN1Encodable[] buildSoftwareEnforcedList() throws Exception {
-        List<ASN1Encodable> encodables = new ArrayList<>();
+        List<ASN1TaggedEntry> entries = new ArrayList<>();
         
-        // Attestation Application ID
+        // Attestation Application ID [709] EXPLICIT OCTET_STRING OPTIONAL
         byte[] applicationId = buildAttestationApplicationId();
         if (applicationId != null) {
-            encodables.add(new DERTaggedObject(true, 
-                    AttestationTags.ATTESTATION_APPLICATION_ID, 
+            entries.add(new ASN1TaggedEntry(AttestationTags.ATTESTATION_APPLICATION_ID, true,
                     new DEROctetString(applicationId)));
         }
         
-        // Creation DateTime
-        encodables.add(new DERTaggedObject(true, 
-                AttestationTags.CREATION_DATE_TIME, 
+        // Creation DateTime [701] EXPLICIT INTEGER OPTIONAL
+        entries.add(new ASN1TaggedEntry(AttestationTags.CREATION_DATE_TIME, true,
                 new ASN1Integer(System.currentTimeMillis())));
         
-        return encodables.toArray(new ASN1Encodable[0]);
+        // Sort by tag number as required by DER encoding
+        entries.sort(Comparator.comparingInt(e -> e.tag));
+        
+        return entries.stream()
+                .map(e -> new DERTaggedObject(e.explicit, e.tag, e.value))
+                .toArray(ASN1Encodable[]::new);
     }
     
     /**
      * Builds the hardware-enforced authorization list.
+     * 
+     * AuthorizationList ::= SEQUENCE {
+     *     purpose                    [1] EXPLICIT SET OF INTEGER OPTIONAL,
+     *     algorithm                  [2] EXPLICIT INTEGER OPTIONAL,
+     *     keySize                    [3] EXPLICIT INTEGER OPTIONAL,
+     *     ...
+     * }
+     * 
+     * Per ASN.1 DER encoding rules, EXPLICIT tags wrap the encoded value,
+     * while the schema uses context-specific tags [n].
      */
     private ASN1Encodable[] buildHardwareEnforcedList() {
         List<ASN1TaggedEntry> entries = new ArrayList<>();
         
-        // Purpose
+        // Purpose [1] EXPLICIT SET OF INTEGER OPTIONAL
         if (!params.getPurposes().isEmpty()) {
-            entries.add(new ASN1TaggedEntry(AttestationTags.PURPOSE, 
+            entries.add(new ASN1TaggedEntry(AttestationTags.PURPOSE, true,
                     new DERSet(toIntegerArray(params.getPurposes()))));
         }
         
-        // Algorithm
-        entries.add(new ASN1TaggedEntry(AttestationTags.ALGORITHM, 
+        // Algorithm [2] EXPLICIT INTEGER OPTIONAL
+        entries.add(new ASN1TaggedEntry(AttestationTags.ALGORITHM, true,
                 new ASN1Integer(params.getAlgorithm())));
         
-        // Key size
-        entries.add(new ASN1TaggedEntry(AttestationTags.KEY_SIZE, 
+        // Key size [3] EXPLICIT INTEGER OPTIONAL
+        entries.add(new ASN1TaggedEntry(AttestationTags.KEY_SIZE, true,
                 new ASN1Integer(params.getKeySize())));
         
-        // Digest
+        // Digest [5] EXPLICIT SET OF INTEGER OPTIONAL
         if (!params.getDigests().isEmpty()) {
-            entries.add(new ASN1TaggedEntry(AttestationTags.DIGEST, 
+            entries.add(new ASN1TaggedEntry(AttestationTags.DIGEST, true,
                     new DERSet(toIntegerArray(params.getDigests()))));
         }
         
-        // EC Curve (for EC keys)
+        // EC Curve [10] EXPLICIT INTEGER OPTIONAL (for EC keys)
         if (params.getAlgorithm() == android.hardware.security.keymint.Algorithm.EC) {
-            entries.add(new ASN1TaggedEntry(AttestationTags.EC_CURVE, 
+            entries.add(new ASN1TaggedEntry(AttestationTags.EC_CURVE, true,
                     new ASN1Integer(params.getEcCurve())));
         }
         
-        // RSA public exponent (for RSA keys)
+        // RSA public exponent [200] EXPLICIT INTEGER OPTIONAL (for RSA keys)
         if (params.getAlgorithm() == android.hardware.security.keymint.Algorithm.RSA) {
-            entries.add(new ASN1TaggedEntry(AttestationTags.RSA_PUBLIC_EXPONENT, 
+            entries.add(new ASN1TaggedEntry(AttestationTags.RSA_PUBLIC_EXPONENT, true,
                     new ASN1Integer(params.getRsaPublicExponent())));
         }
         
-        // No auth required
-        if (params.isNoAuthRequired()) {
-            entries.add(new ASN1TaggedEntry(AttestationTags.NO_AUTH_REQUIRED, 
+        // Rollback resistance [303] EXPLICIT NULL OPTIONAL (Keymaster 3.0+)
+        if (params.isRollbackResistance()) {
+            entries.add(new ASN1TaggedEntry(AttestationTags.ROLLBACK_RESISTANCE, true,
                     DERNull.INSTANCE));
         }
         
-        // Origin
-        entries.add(new ASN1TaggedEntry(AttestationTags.ORIGIN, 
+        // Early boot only [305] EXPLICIT NULL OPTIONAL (Keymaster 4.1+)
+        if (params.isEarlyBootOnly()) {
+            entries.add(new ASN1TaggedEntry(AttestationTags.EARLY_BOOT_ONLY, true,
+                    DERNull.INSTANCE));
+        }
+        
+        // No auth required [503] EXPLICIT NULL OPTIONAL
+        if (params.isNoAuthRequired()) {
+            entries.add(new ASN1TaggedEntry(AttestationTags.NO_AUTH_REQUIRED, true,
+                    DERNull.INSTANCE));
+        }
+        
+        // Origin [702] EXPLICIT INTEGER OPTIONAL
+        entries.add(new ASN1TaggedEntry(AttestationTags.ORIGIN, true,
                 new ASN1Integer(params.getOrigin())));
         
-        // Root of Trust
+        // Root of Trust [704] EXPLICIT RootOfTrust OPTIONAL
         ASN1Sequence rootOfTrust = buildRootOfTrust();
-        entries.add(new ASN1TaggedEntry(AttestationTags.ROOT_OF_TRUST, rootOfTrust));
+        entries.add(new ASN1TaggedEntry(AttestationTags.ROOT_OF_TRUST, true, rootOfTrust));
         
-        // OS Version
-        entries.add(new ASN1TaggedEntry(AttestationTags.OS_VERSION, 
+        // OS Version [705] EXPLICIT INTEGER OPTIONAL
+        entries.add(new ASN1TaggedEntry(AttestationTags.OS_VERSION, true,
                 new ASN1Integer(TrickyStoreUtils.getOsVersion())));
         
-        // OS Patch Level
-        entries.add(new ASN1TaggedEntry(AttestationTags.OS_PATCH_LEVEL, 
+        // OS Patch Level [706] EXPLICIT INTEGER OPTIONAL (YYYYMM format)
+        entries.add(new ASN1TaggedEntry(AttestationTags.OS_PATCH_LEVEL, true,
                 new ASN1Integer(TrickyStoreUtils.getPatchLevel())));
         
-        // Vendor Patch Level
-        entries.add(new ASN1TaggedEntry(AttestationTags.VENDOR_PATCH_LEVEL, 
+        // Vendor Patch Level [718] EXPLICIT INTEGER OPTIONAL (YYYYMMDD format)
+        entries.add(new ASN1TaggedEntry(AttestationTags.VENDOR_PATCH_LEVEL, true,
                 new ASN1Integer(TrickyStoreUtils.getPatchLevelLong())));
         
-        // Boot Patch Level
-        entries.add(new ASN1TaggedEntry(AttestationTags.BOOT_PATCH_LEVEL, 
+        // Boot Patch Level [719] EXPLICIT INTEGER OPTIONAL (YYYYMMDD format)
+        entries.add(new ASN1TaggedEntry(AttestationTags.BOOT_PATCH_LEVEL, true,
                 new ASN1Integer(TrickyStoreUtils.getPatchLevelLong())));
         
-        // Module Hash (KeyMint 4.0+)
+        // Device Unique Attestation [720] EXPLICIT NULL OPTIONAL (Keymaster 4.1+)
+        if (params.isDeviceUniqueAttestation()) {
+            entries.add(new ASN1TaggedEntry(AttestationTags.DEVICE_UNIQUE_ATTESTATION, true,
+                    DERNull.INSTANCE));
+        }
+        
+        // Module Hash [724] EXPLICIT OCTET_STRING OPTIONAL (KeyMint 4.0+)
         byte[] moduleHash = TrickyStoreUtils.getModuleHash();
         if (moduleHash != null) {
-            entries.add(new ASN1TaggedEntry(AttestationTags.MODULE_HASH, 
+            entries.add(new ASN1TaggedEntry(AttestationTags.MODULE_HASH, true,
                     new DEROctetString(moduleHash)));
         }
         
@@ -224,56 +257,67 @@ public final class AttestationExtensionBuilder {
         entries.sort(Comparator.comparingInt(e -> e.tag));
         
         return entries.stream()
-                .map(e -> new DERTaggedObject(true, e.tag, e.value))
+                .map(e -> new DERTaggedObject(e.explicit, e.tag, e.value))
                 .toArray(ASN1Encodable[]::new);
     }
     
     /**
      * Adds ID attestation tags if present in parameters.
+     * 
+     * All attestation ID tags are OCTET_STRING with EXPLICIT tagging.
      */
     private void addIdAttestationTags(List<ASN1TaggedEntry> entries) {
+        // attestationIdBrand [710] EXPLICIT OCTET_STRING OPTIONAL
         if (params.getAttestationIdBrand() != null) {
-            entries.add(new ASN1TaggedEntry(AttestationTags.ATTESTATION_ID_BRAND, 
+            entries.add(new ASN1TaggedEntry(AttestationTags.ATTESTATION_ID_BRAND, true,
                     new DEROctetString(params.getAttestationIdBrand())));
         }
         
+        // attestationIdDevice [711] EXPLICIT OCTET_STRING OPTIONAL
         if (params.getAttestationIdDevice() != null) {
-            entries.add(new ASN1TaggedEntry(AttestationTags.ATTESTATION_ID_DEVICE, 
+            entries.add(new ASN1TaggedEntry(AttestationTags.ATTESTATION_ID_DEVICE, true,
                     new DEROctetString(params.getAttestationIdDevice())));
         }
         
+        // attestationIdProduct [712] EXPLICIT OCTET_STRING OPTIONAL
         if (params.getAttestationIdProduct() != null) {
-            entries.add(new ASN1TaggedEntry(AttestationTags.ATTESTATION_ID_PRODUCT, 
+            entries.add(new ASN1TaggedEntry(AttestationTags.ATTESTATION_ID_PRODUCT, true,
                     new DEROctetString(params.getAttestationIdProduct())));
         }
         
+        // attestationIdSerial [713] EXPLICIT OCTET_STRING OPTIONAL
         if (params.getAttestationIdSerial() != null) {
-            entries.add(new ASN1TaggedEntry(AttestationTags.ATTESTATION_ID_SERIAL, 
+            entries.add(new ASN1TaggedEntry(AttestationTags.ATTESTATION_ID_SERIAL, true,
                     new DEROctetString(params.getAttestationIdSerial())));
         }
         
+        // attestationIdImei [714] EXPLICIT OCTET_STRING OPTIONAL
         if (params.getAttestationIdImei() != null) {
-            entries.add(new ASN1TaggedEntry(AttestationTags.ATTESTATION_ID_IMEI, 
+            entries.add(new ASN1TaggedEntry(AttestationTags.ATTESTATION_ID_IMEI, true,
                     new DEROctetString(params.getAttestationIdImei())));
         }
         
+        // attestationIdMeid [715] EXPLICIT OCTET_STRING OPTIONAL
         if (params.getAttestationIdMeid() != null) {
-            entries.add(new ASN1TaggedEntry(AttestationTags.ATTESTATION_ID_MEID, 
+            entries.add(new ASN1TaggedEntry(AttestationTags.ATTESTATION_ID_MEID, true,
                     new DEROctetString(params.getAttestationIdMeid())));
         }
         
+        // attestationIdManufacturer [716] EXPLICIT OCTET_STRING OPTIONAL
         if (params.getAttestationIdManufacturer() != null) {
-            entries.add(new ASN1TaggedEntry(AttestationTags.ATTESTATION_ID_MANUFACTURER, 
+            entries.add(new ASN1TaggedEntry(AttestationTags.ATTESTATION_ID_MANUFACTURER, true,
                     new DEROctetString(params.getAttestationIdManufacturer())));
         }
         
+        // attestationIdModel [717] EXPLICIT OCTET_STRING OPTIONAL
         if (params.getAttestationIdModel() != null) {
-            entries.add(new ASN1TaggedEntry(AttestationTags.ATTESTATION_ID_MODEL, 
+            entries.add(new ASN1TaggedEntry(AttestationTags.ATTESTATION_ID_MODEL, true,
                     new DEROctetString(params.getAttestationIdModel())));
         }
         
+        // attestationIdSecondImei [723] EXPLICIT OCTET_STRING OPTIONAL (KeyMint 3.0+)
         if (params.getAttestationIdSecondImei() != null) {
-            entries.add(new ASN1TaggedEntry(AttestationTags.ATTESTATION_ID_SECOND_IMEI, 
+            entries.add(new ASN1TaggedEntry(AttestationTags.ATTESTATION_ID_SECOND_IMEI, true,
                     new DEROctetString(params.getAttestationIdSecondImei())));
         }
     }
@@ -352,7 +396,11 @@ public final class AttestationExtensionBuilder {
     }
     
     /**
-     * Helper class for tagged ASN.1 entries.
+     * Helper class for tagged ASN.1 entries with explicit/implicit encoding.
+     * 
+     * @param tag The context-specific tag number
+     * @param explicit Whether to use EXPLICIT (true) or IMPLICIT (false) tagging
+     * @param value The ASN.1 value to encode
      */
-    private record ASN1TaggedEntry(int tag, ASN1Encodable value) {}
+    private record ASN1TaggedEntry(int tag, boolean explicit, ASN1Encodable value) {}
 }
